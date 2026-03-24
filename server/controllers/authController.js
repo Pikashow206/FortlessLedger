@@ -20,7 +20,6 @@ exports.register = async (req, res) => {
             'INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, ?)',
             [userId, email, hashedPassword, userRole]
         );
-
         // Create Default Account for Customer
         if (userRole === 'CUSTOMER') {
             const accountId = uuidv4();
