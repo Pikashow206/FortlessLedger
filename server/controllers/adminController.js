@@ -1,5 +1,6 @@
 const db = require('../config/db');
 
+//Only for admin
 exports.getDashboard = async (req, res) => {
     try {
         const [stats] = await db.execute('SELECT * FROM vw_global_liquidity');
