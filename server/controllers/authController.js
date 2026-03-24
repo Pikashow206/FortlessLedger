@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/db');
 
+//Register
 exports.register = async (req, res) => {
     const { email, password, role } = req.body;
     const connection = await db.getConnection();
@@ -43,6 +44,7 @@ exports.register = async (req, res) => {
     }
 };
 
+//Login
 exports.login = async (req, res) => {
     const { email, password } = req.body;
     try {
