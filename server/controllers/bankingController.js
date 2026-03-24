@@ -18,6 +18,7 @@ exports.getBalance = async (req, res) => {
     }
 };
 
+//History
 exports.getHistory = async (req, res) => {
     try {
         // First get the user's account ID
@@ -44,6 +45,7 @@ exports.getHistory = async (req, res) => {
     }
 };
 
+//Transfer
 exports.transfer = async (req, res) => {
     const { receiver_account_no, amount } = req.body;
     const transferAmount = parseFloat(amount);
