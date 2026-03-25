@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border-default: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --brand-primary: #059669; /* Emerald 600 */
+  --brand-secondary: #10b981; /* Emerald 500 */
+  --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+  --bg-base: #020617;
+  --bg-card: #0f172a;
+  --bg-hover: #1e293b;
+  --border-default: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --brand-primary: #059669; 
+  --brand-secondary: #34d399;
+  --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.4);
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* Glass panel that uses variables */
+.glass {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-default);
+  transition: all 0.3s ease;
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.7);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 4px; }
