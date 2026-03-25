@@ -1,0 +1,1278 @@
+import { useState, useEffect, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+import { motion, AnimatePresence } from "framer-motion";
+import api from "../api/axios";
+import Navbar from "../components/ui/Navbar";
+import {
+  Search,
+  AlertTriangle,
+  Activity,
+  Lock,
+  Users,
+  Vault,
+  ArrowRight,
+  BadgeDollarSign,
+  Server,
+  Cpu,
+  Wifi,
+  ShieldCheck,
+  Fingerprint,
+  Unlock,
+  PieChart as PieIcon,
+  BarChart2,
+  ArrowRightLeft,
+  PowerOff,
+} from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.1, duration: 0.5 },
+  }),
+};
+
+export default function Admin() {
+  const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const [stats, setStats] = useState({
+    total_liquidity: 0,
+    active_accounts: 0,
+  });
+  const [alerts, setAlerts] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [chartData, setChartData] = useState({ flow: [], distribution: [] });
+  const [tickerData, setTickerData] = useState([]);
+
+  const [supplyForm, setSupplyForm] = useState({ account_no: "", amount: "" });
+  const [msg, setMsg] = useState({ text: "", type: "" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [inspectedAccount, setInspectedAccount] = useState(null);
+  const [inspectError, setInspectError] = useState("");
+
+  const [freezeTarget, setFreezeTarget] = useState(null);
+
+  // NEW: DEFCON 1 States
+  const [isSystemLocked, setIsSystemLocked] = useState(false);
+  const [showDefconModal, setShowDefconModal] = useState(false);
+
+  useEffect(() => {
+    if (!user || user.role !== "ADMIN") navigate("/dashboard");
+    else fetchData();
+  }, [user, navigate]);
+
+  const fetchData = async () => {
+    try {
+      // Fetch individually so a single route failure doesn't blank out the whole page!
+      api
+        .get("/admin/dashboard")
+        .then((res) => setStats(res.data))
+        .catch((e) => console.error("Stats Error:", e));
+      api
+        .get("/admin/fraud-alerts")
+        .then((res) => setAlerts(res.data))
+        .catch((e) => console.error("Alerts Error:", e));
+      api
+        .get("/admin/audit-trail")
+        .then((res) => setLogs(res.data))
+        .catch((e) => console.error("Logs Error:", e));
+      api
+        .get("/admin/chart")
+        .then((res) => setChartData(res.data))
+        .catch((e) => console.error("Chart Error:", e));
+      api
+        .get("/admin/ticker")
+        .then((res) => setTickerData(res.data))
+        .catch((e) => console.error("Ticker Error:", e));
+
+      // System Status Check
+      api
+        .get("/admin/system-status")
+        .then((res) => setIsSystemLocked(res.data.lockdown))
+        .catch((e) => console.error("System Status Error:", e));
+    } catch (err) {
+      if (
+        err.response &&
+        (err.response.status === 401 || err.response.status === 403)
+      )
+        logout();
+    }
+  };
+
+  // NEW: Execute Global Lockdown
+  const executeDefconProtocol = async () => {
+    try {
+      const res = await api.post("/admin/system-lockdown");
+      setIsSystemLocked(res.data.lockdown);
+      setShowDefconModal(false);
+      fetchData(); // Refresh logs to show the massive lockdown event!
+    } catch (error) {
+      alert("Failed to communicate with central core.");
+    }
+  };
+
+  const confirmFreeze = (id, account_no, status) =>
+    setFreezeTarget({ id, account_no, status });
+
+  const executeFreezeAccount = async () => {
+    if (!freezeTarget) return;
+    try {
+      await api.patch(`/admin/freeze/${freezeTarget.id}`);
+      fetchData();
+      if (inspectedAccount && inspectedAccount.id === freezeTarget.id) {
+        setInspectedAccount({
+          ...inspectedAccount,
+          status: inspectedAccount.status === "ACTIVE" ? "FROZEN" : "ACTIVE",
+        });
+      }
+      setFreezeTarget(null);
+    } catch (err) {
+      alert("Failed to update status.");
+      setFreezeTarget(null);
+    }
+  };
+
+  const handleSupplyCapital = async (e) => {
+    e.preventDefault();
+    setMsg({ text: "Minting capital...", type: "info" });
+    try {
+      await api.post("/admin/supply", {
+        account_no: supplyForm.account_no,
+        amount: parseFloat(supplyForm.amount),
+      });
+      setMsg({
+        text: `Successfully injected capital into ${supplyForm.account_no}`,
+        type: "success",
+      });
+      setSupplyForm({ account_no: "", amount: "" });
+      fetchData();
+      if (
+        inspectedAccount &&
+        inspectedAccount.account_no === supplyForm.account_no
+      )
+        handleInspect(null, supplyForm.account_no);
+    } catch (err) {
+      setMsg({
+        text: err.response?.data?.error || "Injection failed",
+        type: "error",
+      });
+    }
+  };
+
+  const handleInspect = async (e, forceId = null) => {
+    if (e) e.preventDefault();
+    setInspectError("");
+    setInspectedAccount(null);
+    const target = forceId || searchQuery;
+    if (!target) return;
+    try {
+      const res = await api.get(`/admin/account/${target}`);
+      setInspectedAccount(res.data);
+    } catch (err) {
+      setInspectError(err.response?.data?.error || "Entity not found");
+    }
+  };
+
+  const VolumeTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div
+          className="glass p-3 rounded-xl border shadow-xl"
+          style={{ borderColor: "var(--border-default)" }}
+        >
+          <p
+            className="text-[10px] font-bold uppercase mb-1"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Tx Volume
+          </p>
+          <p
+            className="text-lg font-mono font-bold"
+            style={{ color: "var(--brand-primary)" }}
+          >
+            ${Number(payload[0].value).toLocaleString()}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const VelocityTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div
+          className="glass p-3 rounded-xl border shadow-xl"
+          style={{ borderColor: "var(--border-default)" }}
+        >
+          <p
+            className="text-[10px] font-bold uppercase mb-1"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Throughput
+          </p>
+          <p
+            className="text-lg font-mono font-bold"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {payload[0].value} <span className="text-xs">TXs</span>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const displayFlow =
+    chartData.flow?.length > 0
+      ? chartData.flow
+      : [{ time: "Now", volume: 0, tx_count: 0 }];
+  const displayDist =
+    chartData.distribution?.length > 0
+      ? chartData.distribution.map((d) => ({ ...d, value: Number(d.value) }))
+      : [{ name: "ACTIVE", value: 1 }];
+  const PIE_COLORS = {
+    ACTIVE: "#10b981",
+    FROZEN: "#e11d48",
+    SYSTEM: "#3b82f6",
+  };
+
+  return (
+    <div className="w-full bg-transparent min-h-screen flex flex-col relative">
+      <Navbar />
+
+      {/* CONFIRMATION MODALS (Freeze & Defcon) */}
+      <AnimatePresence>
+        {/* 1. Account Freeze Modal */}
+        {freezeTarget && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-md p-8 rounded-3xl border shadow-2xl glass"
+              style={{
+                borderColor: "var(--border-default)",
+                background: "var(--bg-card)",
+              }}
+            >
+              <div
+                className="flex items-center gap-3 mb-4"
+                style={{
+                  color:
+                    freezeTarget.status === "ACTIVE" ? "#e11d48" : "#10b981",
+                }}
+              >
+                {freezeTarget.status === "ACTIVE" ? (
+                  <Lock size={24} />
+                ) : (
+                  <Unlock size={24} />
+                )}
+                <h3 className="text-xl font-extrabold">
+                  Confirm Protocol Execution
+                </h3>
+              </div>
+              <p
+                className="text-sm font-medium mb-6 leading-relaxed"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                You are about to{" "}
+                <strong
+                  className="font-bold tracking-wide uppercase"
+                  style={{
+                    color:
+                      freezeTarget.status === "ACTIVE" ? "#e11d48" : "#10b981",
+                  }}
+                >
+                  {freezeTarget.status === "ACTIVE" ? "FREEZE" : "UNFREEZE"}
+                </strong>{" "}
+                the target entity. <br />
+                <br />
+                <span className="text-xs uppercase tracking-wider opacity-60">
+                  Target ID:
+                </span>
+                <br />
+                <span
+                  className="font-mono text-lg"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {freezeTarget.account_no}
+                </span>
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setFreezeTarget(null)}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold border transition-all hover:bg-slate-800/50"
+                  style={{
+                    borderColor: "var(--border-default)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeFreezeAccount}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 flex items-center justify-center gap-2 shadow-lg"
+                  style={{
+                    background:
+                      freezeTarget.status === "ACTIVE" ? "#e11d48" : "#10b981",
+                  }}
+                >
+                  {freezeTarget.status === "ACTIVE" ? (
+                    <>
+                      <Lock size={16} /> Execute Freeze
+                    </>
+                  ) : (
+                    <>
+                      <Unlock size={16} /> Execute Unfreeze
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* 2. DEFCON 1 GLOBAL LOCKDOWN MODAL */}
+        {showDefconModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-red-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              className="w-full max-w-lg p-10 rounded-[2rem] border-2 shadow-[0_0_100px_rgba(225,29,72,0.4)] bg-slate-950"
+              style={{ borderColor: "#e11d48" }}
+            >
+              <div className="flex justify-center mb-6">
+                <div className="w-20 h-20 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-500 animate-pulse">
+                  <PowerOff size={40} />
+                </div>
+              </div>
+              <h3 className="text-3xl font-black text-center text-rose-500 mb-2 uppercase tracking-widest">
+                {isSystemLocked ? "Disengage Lockdown" : "Execute Defcon 1"}
+              </h3>
+              <p className="text-center text-rose-200/70 text-sm font-medium mb-8 px-4 leading-relaxed">
+                {isSystemLocked
+                  ? "Re-initializing central network nodes. This will allow liquidity flow and user authentication to resume normally."
+                  : "WARNING: This will instantly freeze ALL global liquidity. No entities will be able to process transactions until protocol is reversed."}
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={executeDefconProtocol}
+                  className="w-full py-4 rounded-xl text-sm font-bold text-white transition-all hover:scale-[1.02] flex items-center justify-center gap-2 shadow-2xl"
+                  style={{ background: isSystemLocked ? "#10b981" : "#e11d48" }}
+                >
+                  {isSystemLocked
+                    ? "RESTORE NETWORK ACCESS"
+                    : "CONFIRM GLOBAL SHUTDOWN"}
+                </button>
+                <button
+                  onClick={() => setShowDefconModal(false)}
+                  className="w-full py-3 rounded-xl text-sm font-bold border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 transition-all"
+                >
+                  ABORT
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <style>{`
+                @keyframes scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+                .ticker-track { display: flex; width: max-content; animation: scroll 45s linear infinite; padding-left: 180px; }
+                .ticker-track:hover { animation-play-state: paused; }
+                .ticker-track:hover .ticker-item { opacity: 0.3; filter: grayscale(80%); }
+                .ticker-track .ticker-item:hover { opacity: 1; filter: grayscale(0%); transform: scale(1.05); border-color: var(--brand-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10; }
+                .ticker-item { transition: all 0.3s ease; }
+            `}</style>
+
+      <div
+        className="mt-[72px] h-12 border-b flex items-center relative overflow-hidden shadow-inner"
+        style={{
+          background: "var(--bg-base)",
+          borderColor: "var(--border-default)",
+        }}
+      >
+        <div
+          className="absolute left-0 top-0 bottom-0 z-20 flex items-center px-6 border-r glass shadow-[4px_0_12px_rgba(0,0,0,0.1)]"
+          style={{
+            borderColor: "var(--border-default)",
+            background: "var(--bg-base)",
+          }}
+        >
+          <span
+            className={`w-2 h-2 rounded-full mr-2.5 ${isSystemLocked ? "bg-rose-500 shadow-[0_0_8px_#e11d48]" : "bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981]"}`}
+          ></span>
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest"
+            style={{
+              color: isSystemLocked ? "#e11d48" : "var(--text-primary)",
+            }}
+          >
+            {isSystemLocked ? "NETWORK LOCKED" : "Live Ledger"}
+          </span>
+        </div>
+        <div
+          className="absolute left-[140px] w-24 h-full z-10 pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(to right, var(--bg-base), transparent)",
+          }}
+        ></div>
+        <div
+          className="absolute right-0 w-24 h-full z-10 pointer-events-none"
+          style={{
+            background: "linear-gradient(to left, var(--bg-base), transparent)",
+          }}
+        ></div>
+
+        {tickerData.length > 0 ? (
+          <div className="ticker-track">
+            {[...tickerData, ...tickerData].map((tx, idx) => (
+              <div
+                key={idx}
+                className={`ticker-item flex items-center gap-3 px-4 py-1.5 mx-2 rounded-md border ${isSystemLocked ? "opacity-30 grayscale" : ""}`}
+                style={{
+                  borderColor: "var(--border-default)",
+                  background: "var(--bg-card)",
+                }}
+              >
+                <span
+                  className="text-[10px] font-mono tracking-wider"
+                  style={{
+                    color:
+                      tx.sender === "CENTRAL MINT"
+                        ? "#3b82f6"
+                        : "var(--text-secondary)",
+                  }}
+                >
+                  {tx.sender.length > 12 && tx.sender !== "CENTRAL MINT"
+                    ? tx.sender.substring(0, 8) + "..."
+                    : tx.sender}
+                </span>
+                <ArrowRight
+                  size={10}
+                  style={{ color: "var(--text-secondary)" }}
+                  className="opacity-50"
+                />
+                <span
+                  className="text-[10px] font-mono tracking-wider font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {tx.receiver.length > 12
+                    ? tx.receiver.substring(0, 8) + "..."
+                    : tx.receiver}
+                </span>
+                <span
+                  className="px-2 py-0.5 rounded text-[11px] font-bold ml-1"
+                  style={{
+                    background: "rgba(16, 185, 129, 0.1)",
+                    color: "#10b981",
+                  }}
+                >
+                  +$
+                  {parseFloat(tx.amount).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="w-full text-center text-[10px] font-mono uppercase tracking-widest pl-[160px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Awaiting network traffic...
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 w-full max-w-7xl mx-auto px-6 py-12">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4"
+        >
+          <div>
+            <h1
+              className="text-3xl font-extrabold flex items-center gap-3"
+              style={{ color: "var(--text-primary)" }}
+            >
+              <Search style={{ color: "var(--brand-primary)" }} /> Central
+              Command
+            </h1>
+            <p
+              className="text-sm mt-2 font-medium"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              Live network surveillance and core ledger management.
+            </p>
+          </div>
+
+          {/* NEW: THE KILL SWITCH AND STATUS BADGE */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowDefconModal(true)}
+              className={`px-5 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider text-white shadow-lg flex items-center gap-2 transition-all ${isSystemLocked ? "bg-emerald-600 hover:bg-emerald-500" : "bg-rose-600 hover:bg-rose-500 hover:scale-105"}`}
+            >
+              <PowerOff size={14} />
+              {isSystemLocked ? "RESTORE SYSTEM" : "ENGAGE LOCKDOWN"}
+            </button>
+
+            <div
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-full border glass transition-colors ${isSystemLocked ? "border-rose-500/50 bg-rose-500/10" : "border-emerald-500/20"}`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${isSystemLocked ? "bg-rose-500 animate-ping" : "bg-emerald-500 animate-pulse"}`}
+              ></span>
+              <span
+                className="text-[10px] font-bold uppercase tracking-wider transition-colors"
+                style={{
+                  color: isSystemLocked ? "#e11d48" : "var(--text-primary)",
+                }}
+              >
+                {isSystemLocked ? "SYSTEM LOCKDOWN" : "System Online"}
+              </span>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* ROW 1: Stats */}
+        <div
+          className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 transition-opacity duration-700 ${isSystemLocked ? "opacity-50" : "opacity-100"}`}
+        >
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={1}
+            variants={fadeUp}
+            className="p-6 rounded-3xl border glass lg:col-span-2 flex items-center gap-6"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg"
+              style={{ background: "var(--brand-primary)" }}
+            >
+              <Vault size={28} />
+            </div>
+            <div>
+              <p
+                className="text-xs font-bold uppercase tracking-wider"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Total System Liquidity
+              </p>
+              <p className="text-3xl font-extrabold font-mono shimmer-text mt-1">
+                $
+                {parseFloat(stats.total_liquidity || 0).toLocaleString(
+                  undefined,
+                  { minimumFractionDigits: 2 },
+                )}
+              </p>
+            </div>
+          </motion.div>
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={2}
+            variants={fadeUp}
+            className="p-6 rounded-3xl border glass flex items-center gap-4"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg"
+              style={{ background: "var(--text-primary)" }}
+            >
+              <Users size={24} />
+            </div>
+            <div>
+              <p
+                className="text-[10px] font-bold uppercase tracking-wider"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Active Nodes
+              </p>
+              <p
+                className="text-2xl font-extrabold font-mono"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {stats.active_accounts}
+              </p>
+            </div>
+          </motion.div>
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={3}
+            variants={fadeUp}
+            className="p-6 rounded-3xl border glass flex flex-col justify-center gap-2"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div
+              className="flex justify-between items-center text-xs font-bold"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <span className="flex items-center gap-1">
+                <Cpu size={14} /> DB Load
+              </span>{" "}
+              <span
+                style={{
+                  color: isSystemLocked ? "#e11d48" : "var(--brand-primary)",
+                }}
+              >
+                {isSystemLocked ? "0%" : "12%"}
+              </span>
+            </div>
+            <div
+              className="flex justify-between items-center text-xs font-bold"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <span className="flex items-center gap-1">
+                <Server size={14} /> Latency
+              </span>{" "}
+              <span
+                style={{
+                  color: isSystemLocked ? "#e11d48" : "var(--brand-primary)",
+                }}
+              >
+                {isSystemLocked ? "ERR" : "8ms"}
+              </span>
+            </div>
+            <div
+              className="flex justify-between items-center text-xs font-bold"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <span className="flex items-center gap-1">
+                <Wifi size={14} /> Network
+              </span>{" "}
+              <span
+                style={{
+                  color: isSystemLocked ? "#e11d48" : "var(--brand-primary)",
+                }}
+              >
+                {isSystemLocked ? "OFFLINE" : "Stable"}
+              </span>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* ROW 2: Primary Area Chart & Mint Terminal */}
+        <div
+          className={`grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 transition-opacity duration-700 ${isSystemLocked ? "opacity-50 pointer-events-none" : "opacity-100"}`}
+        >
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={4}
+            variants={fadeUp}
+            className="lg:col-span-2 rounded-3xl border p-6 glass flex flex-col"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3
+                className="font-bold flex items-center gap-2"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <Activity size={18} style={{ color: "var(--brand-primary)" }} />{" "}
+                Network Volume (24h)
+              </h3>
+              <span
+                className="text-[10px] uppercase font-bold border px-2 py-1 rounded-md"
+                style={{
+                  borderColor: "var(--border-default)",
+                  color: "var(--brand-primary)",
+                  background: "rgba(5, 150, 105, 0.1)",
+                }}
+              >
+                Live Sync
+              </span>
+            </div>
+            <div className="flex-1 w-full h-[220px]">
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart
+                  data={displayFlow}
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="colorVolume"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="var(--brand-primary)"
+                        stopOpacity={0.4}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="var(--brand-primary)"
+                        stopOpacity={0}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="var(--border-default)"
+                    opacity={0.5}
+                  />
+                  <XAxis
+                    dataKey="time"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: "var(--text-secondary)" }}
+                    dy={10}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: "var(--text-secondary)" }}
+                    tickFormatter={(val) =>
+                      val >= 1000000
+                        ? `$${(val / 1000000).toFixed(1)}M`
+                        : `$${val / 1000}k`
+                    }
+                  />
+                  <RechartsTooltip content={<VolumeTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="volume"
+                    stroke="var(--brand-primary)"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorVolume)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={5}
+            variants={fadeUp}
+            className="rounded-3xl border p-6 glass flex flex-col justify-center"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <h3
+              className="font-bold mb-6 flex items-center gap-2"
+              style={{ color: "var(--text-primary)" }}
+            >
+              <BadgeDollarSign
+                size={18}
+                style={{ color: "var(--brand-primary)" }}
+              />{" "}
+              System Capital Injection
+            </h3>
+            {msg.text && (
+              <div
+                className="p-3 rounded-xl text-xs font-bold mb-4 border"
+                style={{
+                  background:
+                    msg.type === "error"
+                      ? "rgba(225,29,72,0.1)"
+                      : "rgba(5,150,105,0.1)",
+                  color:
+                    msg.type === "error" ? "#e11d48" : "var(--brand-primary)",
+                  borderColor:
+                    msg.type === "error"
+                      ? "rgba(225,29,72,0.3)"
+                      : "rgba(5,150,105,0.3)",
+                }}
+              >
+                {msg.text}
+              </div>
+            )}
+            <form onSubmit={handleSupplyCapital} className="space-y-4">
+              <div>
+                <label
+                  className="block text-[10px] font-bold uppercase tracking-wider mb-1.5"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Target Account ID
+                </label>
+                <input
+                  required
+                  value={supplyForm.account_no}
+                  onChange={(e) =>
+                    setSupplyForm({ ...supplyForm, account_no: e.target.value })
+                  }
+                  type="text"
+                  placeholder="FLXXXXXXXXXX"
+                  className="w-full p-3 rounded-xl border focus:ring-2 font-mono text-sm transition-all"
+                  style={{
+                    background: "var(--bg-base)",
+                    borderColor: "var(--border-default)",
+                    color: "var(--text-primary)",
+                    outlineColor: "var(--brand-primary)",
+                  }}
+                />
+              </div>
+              <div>
+                <label
+                  className="block text-[10px] font-bold uppercase tracking-wider mb-1.5"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Amount (USD)
+                </label>
+                <input
+                  required
+                  value={supplyForm.amount}
+                  onChange={(e) =>
+                    setSupplyForm({ ...supplyForm, amount: e.target.value })
+                  }
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  placeholder="0.00"
+                  className="w-full p-3 rounded-xl border focus:ring-2 font-mono text-sm transition-all"
+                  style={{
+                    background: "var(--bg-base)",
+                    borderColor: "var(--border-default)",
+                    color: "var(--text-primary)",
+                    outlineColor: "var(--brand-primary)",
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-3.5 rounded-xl text-sm font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all hover:opacity-90"
+                style={{ background: "var(--brand-primary)" }}
+              >
+                Execute Mint <ArrowRight size={16} />
+              </button>
+            </form>
+          </motion.div>
+        </div>
+
+        {/* ROW 3: Secondary Analytics */}
+        <div
+          className={`grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 transition-opacity duration-700 ${isSystemLocked ? "opacity-50" : "opacity-100"}`}
+        >
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={6}
+            variants={fadeUp}
+            className="rounded-3xl border p-6 glass flex flex-col"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3
+                className="font-bold flex items-center gap-2"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <PieIcon size={18} style={{ color: "var(--brand-primary)" }} />{" "}
+                Liquidity Distribution
+              </h3>
+            </div>
+            <div className="flex-1 w-full h-[180px] flex items-center justify-center relative">
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={displayDist}
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {displayDist.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={PIE_COLORS[entry.name] || "#8884d8"}
+                      />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip
+                    formatter={(value) => `$${Number(value).toLocaleString()}`}
+                    contentStyle={{
+                      background: "var(--bg-card)",
+                      borderColor: "var(--border-default)",
+                      borderRadius: "12px",
+                    }}
+                    itemStyle={{
+                      color: "var(--text-primary)",
+                      fontWeight: "bold",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={7}
+            variants={fadeUp}
+            className="lg:col-span-2 rounded-3xl border p-6 glass flex flex-col"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3
+                className="font-bold flex items-center gap-2"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <BarChart2
+                  size={18}
+                  style={{ color: "var(--brand-primary)" }}
+                />{" "}
+                Transaction Velocity
+              </h3>
+            </div>
+            <div className="flex-1 w-full h-[180px]">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={displayFlow}
+                  margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="var(--border-default)"
+                    opacity={0.5}
+                  />
+                  <XAxis
+                    dataKey="time"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: "var(--text-secondary)" }}
+                    dy={10}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: "var(--text-secondary)" }}
+                    allowDecimals={false}
+                  />
+                  <RechartsTooltip
+                    content={<VelocityTooltip />}
+                    cursor={{ fill: "var(--border-default)", opacity: 0.4 }}
+                  />
+                  <Bar
+                    dataKey="tx_count"
+                    fill="var(--text-primary)"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={40}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* ROW 4 & 5 remain same but we don't fade the Inspector or Logs so the admin can still use them! */}
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          custom={8}
+          variants={fadeUp}
+          className="mb-8 p-6 lg:p-8 rounded-3xl border glass"
+          style={{ borderColor: "var(--border-default)" }}
+        >
+          <div className="flex flex-col lg:flex-row items-start lg:items-center gap-8">
+            <div className="w-full lg:w-1/3">
+              <h3
+                className="font-bold mb-4 flex items-center gap-2 text-lg"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <Fingerprint
+                  size={20}
+                  style={{ color: "var(--brand-primary)" }}
+                />{" "}
+                Deep Entity Inspector
+              </h3>
+              <p
+                className="text-xs mb-5"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Search ledger by precise FL-Account string to view forensics and
+                manage network access.
+              </p>
+              <form onSubmit={handleInspect} className="relative">
+                <input
+                  type="text"
+                  required
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Enter FL-XXXXXXXX"
+                  className="w-full p-4 pl-4 pr-14 rounded-xl border focus:ring-2 font-mono text-sm transition-all"
+                  style={{
+                    background: "var(--bg-base)",
+                    borderColor: "var(--border-default)",
+                    color: "var(--text-primary)",
+                    outlineColor: "var(--brand-primary)",
+                  }}
+                />
+                <button
+                  type="submit"
+                  className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center rounded-lg text-white transition-all shadow-md hover:scale-105"
+                  style={{ background: "var(--brand-primary)" }}
+                >
+                  <Search size={16} />
+                </button>
+              </form>
+              {inspectError && (
+                <p className="text-xs mt-3 font-bold text-rose-500">
+                  {inspectError}
+                </p>
+              )}
+            </div>
+
+            <div
+              className="flex-1 w-full border-t lg:border-t-0 lg:border-l pt-6 lg:pt-0 lg:pl-8"
+              style={{ borderColor: "var(--border-default)" }}
+            >
+              {!inspectedAccount ? (
+                <div
+                  className="h-full min-h-[120px] flex items-center justify-center text-sm font-medium"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Awaiting target designation...
+                </div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6"
+                >
+                  <div className="space-y-1">
+                    <p
+                      className="text-[10px] font-bold uppercase tracking-wider"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      Verified Entity ID
+                    </p>
+                    <p
+                      className="text-lg font-mono font-bold"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {inspectedAccount.account_no}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span
+                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${inspectedAccount.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}`}
+                      >
+                        Status: {inspectedAccount.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p
+                      className="text-[10px] font-bold uppercase tracking-wider mb-1"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      Current Liquidity
+                    </p>
+                    <p
+                      className="text-3xl font-extrabold font-mono mb-4"
+                      style={{ color: "var(--brand-primary)" }}
+                    >
+                      $
+                      {parseFloat(inspectedAccount.balance).toLocaleString(
+                        undefined,
+                        { minimumFractionDigits: 2 },
+                      )}
+                    </p>
+                    <button
+                      onClick={() =>
+                        confirmFreeze(
+                          inspectedAccount.id,
+                          inspectedAccount.account_no,
+                          inspectedAccount.status,
+                        )
+                      }
+                      className={`w-full sm:w-auto px-6 py-2.5 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-2 shadow-lg transition-transform hover:-translate-y-0.5 ${inspectedAccount.status === "ACTIVE" ? "bg-rose-600" : "bg-emerald-600"}`}
+                    >
+                      {inspectedAccount.status === "ACTIVE" ? (
+                        <>
+                          <Lock size={14} /> Freeze Target
+                        </>
+                      ) : (
+                        <>
+                          <Unlock size={14} /> Unfreeze Target
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={9}
+            variants={fadeUp}
+            className="rounded-3xl border p-6 glass"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div
+              className="flex items-center gap-2 mb-6 font-bold"
+              style={{ color: "#e11d48" }}
+            >
+              <AlertTriangle size={18} /> Velocity Anomalies
+            </div>
+            {alerts.length === 0 ? (
+              <div
+                className="h-32 flex flex-col items-center justify-center text-center opacity-50"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ShieldCheck size={32} className="mb-2" />
+                <p className="text-xs font-bold uppercase tracking-wider">
+                  No Anomalies Detected
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2">
+                {alerts.map((a, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-xl border"
+                    style={{
+                      background: "rgba(225, 29, 72, 0.05)",
+                      borderColor: "rgba(225, 29, 72, 0.2)",
+                    }}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <p
+                        className="font-mono text-[11px] font-bold"
+                        style={{ color: "#e11d48" }}
+                      >
+                        {(a.sender_id || "UNKNOWN").substring(0, 12)}...
+                      </p>
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-500">
+                        Flagged
+                      </span>
+                    </div>
+                    <p
+                      className="text-xs font-medium mb-3"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {a.tx_count} Transactions / $
+                      {parseFloat(a.total_volume).toFixed(0)}
+                    </p>
+                    <button
+                      onClick={() =>
+                        confirmFreeze(a.sender_id, a.sender_id, "ACTIVE")
+                      }
+                      className="w-full py-2 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all hover:opacity-80"
+                      style={{ background: "#e11d48" }}
+                    >
+                      <Lock size={14} /> Execute Protocol Freeze
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            custom={10}
+            variants={fadeUp}
+            className="lg:col-span-2 rounded-3xl border p-6 flex flex-col glass"
+            style={{ borderColor: "var(--border-default)" }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3
+                className="font-bold flex items-center gap-2"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <Server size={18} style={{ color: "var(--brand-primary)" }} />{" "}
+                Database Trigger Log
+              </h3>
+              <div
+                className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{ color: "var(--brand-primary)" }}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${isSystemLocked ? "bg-rose-500" : "bg-emerald-500 animate-pulse"}`}
+                ></span>{" "}
+                {isSystemLocked ? "HALTED" : "Streaming"}
+              </div>
+            </div>
+            <div
+              className="flex-1 overflow-y-auto pr-2 space-y-2.5 font-mono text-[11px] bg-[#020617] p-4 rounded-2xl border"
+              style={{
+                maxHeight: "280px",
+                borderColor: "var(--border-default)",
+              }}
+            >
+              {logs.length === 0 ? (
+                <p style={{ color: "var(--text-secondary)" }}>
+                  Awaiting trigger execution...
+                </p>
+              ) : (
+                logs.map((log, i) => (
+                  <div
+                    key={i}
+                    className="flex gap-4 items-start pb-2.5 border-b border-slate-800 last:border-0"
+                  >
+                    <span className="text-slate-500 min-w-[120px]">
+                      {log.timestamp
+                        ? new Date(log.timestamp)
+                            .toISOString()
+                            .replace("T", " ")
+                            .substring(5, 19)
+                        : "Unknown Time"}
+                    </span>
+                    <span
+                      className="font-bold min-w-[110px]"
+                      style={{
+                        color:
+                          log.action === "BALANCE_UPDATE"
+                            ? "var(--brand-primary)"
+                            : "#e11d48",
+                      }}
+                    >
+                      [{log.action}]
+                    </span>
+                    <span className="text-slate-300 flex-1 leading-relaxed">
+                      Entity{" "}
+                      <span className="text-blue-400">
+                        {(log.entity_id || "SYS").substring(0, 8)}
+                      </span>
+                      : <span className="text-rose-400">{log.old_value}</span>{" "}
+                      <ArrowRight size={10} className="inline mx-1" />{" "}
+                      <span className="text-emerald-400">{log.new_value}</span>
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </div>
+  );
+}
