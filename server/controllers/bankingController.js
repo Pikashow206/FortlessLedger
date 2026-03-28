@@ -1,22 +1,6 @@
 const db = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
-exports.getBalance = async (req, res) => {
-    try {
-        const [accounts] = await db.execute(
-            'SELECT account_no, balance, status FROM accounts WHERE user_id = ?',
-            [req.user.id]
-        );
-
-        if (accounts.length === 0) {
-            return res.status(404).json({ error: 'Account not found' });
-        }
-
-        res.json(accounts[0]);
-    } catch (error) {
-        res.status(500).json({ error: 'Server error retrieving balance' });
-    }
-};
 
 //History
 exports.getHistory = async (req, res) => {
@@ -64,7 +48,7 @@ exports.transfer = async (req, res) => {
             [req.user.id]
         );
 
-        
+
 
         if (senders.length === 0) throw new Error('Sender account not found');
         const sender = senders[0];
@@ -115,5 +99,21 @@ exports.transfer = async (req, res) => {
         res.status(400).json({ error: error.message || 'Transfer failed' });
     } finally {
         connection.release();
+    }
+};
+exports.getBalance = async (req, res) => {
+    try {
+        const [accounts] = await db.execute(
+            'SELECT account_no, balance, status FROM accounts WHERE user_id = ?',
+            [req.user.id]
+        );
+
+        if (accounts.length === 0) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+
+        res.json(accounts[0]);
+    } catch (error) {
+        res.status(500).json({ error: 'Server error retrieving balance' });
     }
 };
