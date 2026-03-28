@@ -64,6 +64,8 @@ exports.transfer = async (req, res) => {
             [req.user.id]
         );
 
+        
+
         if (senders.length === 0) throw new Error('Sender account not found');
         const sender = senders[0];
 
