@@ -37,14 +37,6 @@ exports.freezeAccount = async (req, res) => {
     }
 };
 
-exports.getAuditTrail = async (req, res) => {
-    try {
-        const [logs] = await db.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100');
-        res.json(logs);
-    } catch (error) {
-        res.status(500).json({ error: 'Server error retrieving audit trail' });
-    }
-};
 
 // NEW: Central Bank Capital Injection (100% Bulletproof SQL)
 exports.supplyCapital = async (req, res) => {
@@ -93,7 +85,14 @@ exports.supplyCapital = async (req, res) => {
         connection.release();
     }
 };
-
+exports.getAuditTrail = async (req, res) => {
+    try {
+        const [logs] = await db.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100');
+        res.json(logs);
+    } catch (error) {
+        res.status(500).json({ error: 'Server error retrieving audit trail' });
+    }
+};
 // NEW: Advanced Multi-Chart Analytics
 exports.getChartData = async (req, res) => {
     try {
@@ -150,6 +149,14 @@ exports.getAccountDetails = async (req, res) => {
 };
 
 // NEW: Global Ticker Tape
+
+exports.getSystemStatus = async (req, res) => {
+    try {
+        res.json({ lockdown: IS_GLOBAL_LOCKDOWN });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch system status' });
+    }
+};
 exports.getTicker = async (req, res) => {
     try {
         // Fetch the 20 most recent transactions and translate their UUIDs back to Account Numbers
@@ -170,14 +177,6 @@ exports.getTicker = async (req, res) => {
     } catch (error) {
         console.error("Ticker DB Error:", error);
         res.status(500).json({ error: 'Server error retrieving ticker data' });
-    }
-};
-
-exports.getSystemStatus = async (req, res) => {
-    try {
-        res.json({ lockdown: IS_GLOBAL_LOCKDOWN });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch system status' });
     }
 };
 
