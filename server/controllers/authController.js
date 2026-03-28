@@ -42,6 +42,10 @@ exports.register = async (req, res) => {
         connection.release();
     }
 };
+exports.logout = (req, res) => {
+    res.clearCookie('token');
+    res.json({ message: 'Logged out successfully' });
+};
 
 //Login
 exports.login = async (req, res) => {
@@ -74,7 +78,3 @@ exports.login = async (req, res) => {
 };
 
 //Module logout 
-exports.logout = (req, res) => {
-    res.clearCookie('token');
-    res.json({ message: 'Logged out successfully' });
-};
