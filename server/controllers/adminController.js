@@ -85,6 +85,7 @@ exports.supplyCapital = async (req, res) => {
         connection.release();
     }
 };
+
 exports.getAuditTrail = async (req, res) => {
     try {
         const [logs] = await db.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100');
